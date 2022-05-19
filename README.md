@@ -1,25 +1,33 @@
-# Nanoweb
+# Nanorest
 
-Nanoweb is a full asynchronous web server for micropython created in order to benefit from
-a correct ratio between memory size and features.
+Nanorest is an is a full asynchronous web server for micropython created in order to benefit from minimal implementation of powerful features.
 
-It is thus able to run on an ESP8266.
+It is thus able to run on an most Micropython platforms, including the ESP8266.
 
-## Features
+(*heavily based upon the Nanoweb micro webserver implementation)
+## Features fron nanoweb
 
 * Completely asynchronous
-* Declaration of routes via a dictionary or directly by decorator
-* Management of static files (see assets_extensions)
 * Callbacks functions when a new query or an error occurs
 * Extraction of HTML headers
-* User code dense and conci
-* Routing wildcards
+* User code dense and concise
+* output helper methods (e.g. send_file,send_json)
+
+
+## NEW Features
+* Rest mapping to include automatic JSON parsing and stringification
+* Parameterized Routes ( i.e. '/api/v1/servo/<pin>/move' )
+
+
+
+
 
 ## Use
 
 ```Python
+
 import uasyncio
-from nanoweb import Nanoweb
+from nanoweb import Nanoweb,send_file,send_json
 
 async def api_status(request):
     """API status endpoint"""
@@ -28,7 +36,36 @@ async def api_status(request):
     await request.write('{"status": "running"}')
 
 naw = Nanoweb()
+@naw.route("/")
+@naw.route("/index.html")
+def get_index(request):
+    await send_file(request,"a/index.html")
+@naw.route("/main.28.js")
+def get_main(request):
+    await send_file(request,"a/main.28.js")
+@naw.route("/polyfills.28.js")
+def get_poly(request):
+    await send_file(request,"a/polyfills.28.js")
+@naw.route("/runtime.28.js")
+def get_runtime(request):
+    await send_file(request,"a/runtime.28.js")
+@naw.route("/styles.28.css")
+def get_style(request):
+    await send_file(request,"a/styles.28.css")
+@naw.route("/favicon.ico")
+def get_favico(request):
+    await send_file(request,"a/favicon.ico")
+    
+gimbal_data={"x":90,"y":90}
 
+@naw.route("/gimbal/<x>/<y>")
+def gimbal_route(request,x,y):
+    gimbal_data["x"]=x
+    gimbal_data["y"]=y
+    await send_json(request,gimbal_data)
+@naw.route("/gimbal")
+def gimbal(request):
+    await send_json(request,gimbal_data)
 # Declare route from a dict
 naw.routes = {
     '/api/status': api_status,
@@ -40,7 +77,7 @@ def ping(request):
     await request.write("HTTP/1.1 200 OK\r\n\r\n")
     await request.write("pong")
 
-loop = asyncio.get_event_loop()
+loop = uasyncio.get_event_loop()
 loop.create_task(naw.run())
 loop.run_forever()
 ```
