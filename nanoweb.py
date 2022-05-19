@@ -93,9 +93,11 @@ class Request:
     method = ""
     headers = {}
     route = ""
+    _started_sending=False
     read = None
     write = None
     close = None
+    json = None
     version = "1.0"
     _current_params=None
     _response_code = "200"
@@ -111,13 +113,11 @@ class Request:
         self._response_code=code
     def get_return_code(self):
         return self._response_code
-    def send_json(self,obj):
-        send_json(self,obj)
-    def send_file(self,filename, content_type=None, segment=4096, binary=False):
-        send_file(self,filename, content_type=content_type, segment=segment, binary=binary)
 
 
 async def write(request, data):
+    if not request._started_sending:
+        await send_headers(request)
     await request.write(
         data.encode('ISO-8859-1') if type(data) == str else data
     )
@@ -129,26 +129,28 @@ async def error(request, code, reason):
 
 async def send_headers(request):
     #print("sending headers")
-    """Compose and send:
-    - HTTP request line
-    - HTTP headers following by \r\n.
-    This function is generator.
+    if not request._started_sending:
+        """Compose and send:
+        - HTTP request line
+        - HTTP headers following by \r\n.
+        This function is generator.
 
-    P.S.
-    Because of usually we have only a few HTTP headers (2-5) it doesn't make sense
-    to send them separately - sometimes it could increase latency.
-    So combining headers together and send them as single "packet".
-    """
-    # Request line
-    hdrs = 'HTTP/{} {} MSG\r\n'.format(request.version, request.get_return_code())
-    # Headers
-    for k, v in request._response_headers.items():
-        hdrs += '{}: {}\r\n'.format(k, v)
-    hdrs += '\r\n'
-    # Collect garbage after small mallocs
-    gc.collect()
-    #print("sending headers as:{}".format(hdrs))
-    await request.write(hdrs)
+        P.S.
+        Because of usually we have only a few HTTP headers (2-5) it doesn't make sense
+        to send them separately - sometimes it could increase latency.
+        So combining headers together and send them as single "packet".
+        """
+        # Request line
+        hdrs = 'HTTP/{} {} MSG\r\n'.format(request.version, request.get_return_code())
+        # Headers
+        for k, v in request._response_headers.items():
+            hdrs += '{}: {}\r\n'.format(k, v)
+        hdrs += '\r\n'
+        # Collect garbage after small mallocs
+        gc.collect()
+        #print("sending headers as:{}".format(hdrs))
+        request._started_sending=True
+        await request.write(hdrs)
 
 async def send_json(request, val):
     filename="tmp-{}.json".format(_thread.get_ident())
@@ -236,13 +238,13 @@ class Nanoweb:
                         for l in f:
                             await write(request, l.format(**context))
                 except OSError as e:
-                    print("caught:{}".format(e))
+                    print("caught:{}".forat(e))
                     if e.args[0] != uerrno.ENOENT:
                         raise
                     raise HttpError(request, 404, "File Not Found")
             else:
                 #print("handling else current params:{}".format(request._current_params))
-                if params != None:
+                if params:
                     #print("using params:{}".format(json.dumps(params)))
                     handler = await handler(request,**params)
                 else:
@@ -283,6 +285,15 @@ class Nanoweb:
                             request.headers[header] = value
                     elif len(items) == 1:
                         break
+                if request.method.upper() == "POST" and "Content-Type" in request.headers and request.headers["Content-Type"] == "application/json":
+                    val = None
+                    jsonval=None
+                    with open(".{}.req".format(_thread.get_ident()),'w') as file:
+                        val=(await reader.read(-1)).decode('UTF-8')
+                        #print("read:{}".format(val))
+                        jsonval=json.loads(val)
+                        request.json=jsonval
+                    #print("Read json:{}".format(json.dumps(jsonval)))
 
                 if self.callback_request:
                     self.callback_request(request)

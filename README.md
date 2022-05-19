@@ -17,7 +17,7 @@ It is thus able to run on an most Micropython platforms, including the ESP8266.
 ## NEW Features
 * Rest mapping to include automatic JSON parsing and stringification
 * Parameterized Routes ( i.e. '/api/v1/servo/<pin>/move' )
-
+* JSON element in requests that send json
 
 
 
@@ -65,6 +65,12 @@ def gimbal_route(request,x,y):
     await send_json(request,gimbal_data)
 @naw.route("/gimbal")
 def gimbal(request):
+    print("json data:{}".format(request.json))
+    if request.json: #only sent on post requests
+        if 'x' in request.json:
+            gimbal_data["x"]=request.json['x']
+        if 'y' in request.json:
+            gimbal_data["y"]=request.json['y']   
     await send_json(request,gimbal_data)
 # Declare route from a dict
 naw.routes = {
