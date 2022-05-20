@@ -157,7 +157,7 @@ async def send_json(request, val):
     with open(filename, 'w') as jsonfile:
         json.dump(val, jsonfile)
     await send_file(request, filename)
-
+    await request.close()
 
 async def send_file(request, filename, content_type=None, segment=4096, binary=False):
     try:
@@ -177,6 +177,7 @@ async def send_file(request, filename, content_type=None, segment=4096, binary=F
             while True:
                 data = f.read(segment)
                 if not data:
+                    await request.close()
                     break
                 await request.write(data)
     except OSError as e:
@@ -293,6 +294,7 @@ class Nanoweb:
                         #print("read:{}".format(val))
                         jsonval=json.loads(val)
                         request.json=jsonval
+                    reader.close()
                     #print("Read json:{}".format(json.dumps(jsonval)))
 
                 if self.callback_request:
@@ -329,4 +331,3 @@ class Nanoweb:
 
     async def run(self):
         return await asyncio.start_server(self.handle, self.address, self.port)
-
