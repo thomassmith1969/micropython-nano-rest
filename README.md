@@ -16,7 +16,10 @@ It is thus able to run on an most Micropython platforms, including the ESP8266.
 
 ## NEW Features
 * Rest mapping to include automatic JSON parsing and sending
-* Parameterized Routes ( i.e. '/api/v1/servo/<pin>/move' or '/api/v2/rigging/<puppet_number>/<subsystem>' )
+* Parameterized Routes ( i.e. '/api/v1/servo/<pin>/move' or '/api/v2/rigging/
+* _WEB SOCKETS_  Special thanks go out to https://github.com/marcidy .   Thanks to a minor fork to his asyncio websocket example, we now have websocket support
+
+<puppet_number>/<subsystem>' )
 * JSON element in requests that send json (i.e.  request.json )
 
 ## Design considerations
@@ -27,8 +30,9 @@ It is thus able to run on an most Micropython platforms, including the ESP8266.
 ## Use
 
 ```Python
+
 import uasyncio
-from nanoweb import Nanoweb,send_file,send_json
+from nanoweb import Nanoweb,send_headers,send_file,send_json,write
 import machine
 from machine import PWM,Pin
 import time
@@ -36,29 +40,29 @@ import _thread
 
 
 request_queue=[]
+websockets=[]
 
-servo1=PWM(Pin(15,Pin.OUT),freq=50)
 #servo range 18-115
-def set_servo(zero_to_hundred):
+def set_servo2(zero_to_hundred):
     request_queue.append({"method":"_internal_set_servo","params":[zero_to_hundred]})
+    print("queued")
+##    _internal_set_servo(zero_to_hundred)
 
-def _internal_set_servo(zero_to_hundred):
-    servo1.init()
-    servo1.freq(50)
+#def _internal_set_servo(zero_to_hundred):
+async def set_servo(zero_to_hundred):
     print("setting value to:{}".format(zero_to_hundred))
     if int(zero_to_hundred) <0 or int(zero_to_hundred)>100:
-        return
+        yield
     else:
-        duty=18+int(97*int(zero_to_hundred)/100)
+        duty=38+int(97*int(zero_to_hundred)/100)
         print("duty:{}".format(duty))
-        servo1.duty(duty)
-
-
-async def api_status(request):
-    """API status endpoint"""
-    await request.write("HTTP/1.1 200 OK\r\n")
-    await request.write("Content-Type: application/json\r\n\r\n")
-    await request.write('{"status": "running"}')
+        servo1= PWM(Pin(15,Pin.OUT),freq=50,duty=duty)
+        uasyncio.sleep_ms(100);
+        servo1.deinit()
+        uasyncio.sleep_ms(100);
+    return
+#    time.sleep(0.1)
+#    servo1.deinit()
 
 naw = Nanoweb()
 @naw.route("/")
@@ -80,6 +84,19 @@ def get_style(request):
 @naw.route("/favicon.ico")
 def get_favico(request):
     await send_file(request,"a/favicon.ico")
+known_sockets=[]
+@naw.socket("/socket")
+async def socket(ws,path):
+    known_sockets.append(ws)
+    print("Connection on {}".format(path))
+    try:
+        async for msg in ws:
+            print(msg)
+            for sender in known_sockets:
+                await sender.send(msg)
+    finally:
+        print("Disconnected")
+
     
 gimbal_data={"x":90,"y":90}
 
@@ -87,8 +104,7 @@ gimbal_data={"x":90,"y":90}
 def gimbal_route(request,x,y):
     gimbal_data["x"]=x
     gimbal_data["y"]=y
-    _thread.start_new_thread(set_servo,[x])
-    set_servo(x)
+    await set_servo(x)
     await send_json(request,gimbal_data)
 @naw.route("/gimbal")
 def gimbal(request):
@@ -96,37 +112,21 @@ def gimbal(request):
     if request.json: #only sent on post requests
         if 'x' in request.json:
             gimbal_data["x"]=request.json['x']
-            set_servo(request.json['x'])
+            await set_servo(request.json['x'])
         if 'y' in request.json:
             gimbal_data["y"]=request.json['y']   
     await send_json(request,gimbal_data)
 # Declare route from a dict
-naw.routes = {
-    '/api/status': api_status,
-}
-
 # Declare route directly with decorator
 @naw.route("/ping")
 def ping(request):
     await request.write("HTTP/1.1 200 OK\r\n\r\n")
     await request.write("pong")
 
-def listener_thread():
-    while True:
-        while len(request_queue) >0:
-            req=request_queue.pop();
-            if req["method"] == "_internal_set_servo":
-                print("processing SERVO:{}".format(req))
-                _internal_set_servo(req["params"][0])
-                print("processed SERVO:{}".format(req))
-            else:
-                print("processing:{}".format(req))
-                print("")
-        time.sleep(0.5)
-    
-_thread.start_new_thread(listener_thread,[])
 
 loop = uasyncio.get_event_loop()
 loop.create_task(naw.run())
 loop.run_forever()
+
+
 ```

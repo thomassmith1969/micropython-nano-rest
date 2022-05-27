@@ -4,6 +4,19 @@ import json
 import os
 import gc
 import _thread
+import time
+import sys
+from websockets.server import connect as connect_ws # from https://github.com/thomassmith1969/micropython-uasyncio-webexample
+try:
+    import ubinascii as binascii
+except:
+    import binascii
+try:
+    import uhashlib as hashlib
+except:
+    import hashlib
+    
+    
 
 _MIME_TYPES = {
         ".txt"   : "text/plain",
@@ -29,9 +42,9 @@ _MIME_TYPES = {
         ".svg"   : "image/svg+xml",
         ".ico"   : "image/x-icon"
     }
-
 class ParameterizedPath:
-    def __init__(self,pathSpec,func=None):
+    def __init__(self,pathSpec,func=None,is_socket=False):
+        self.is_socket=is_socket
         self.func=func
         if '<' in pathSpec:
             if pathSpec.index('<')<1 or '>' not in pathSpec:
@@ -82,7 +95,6 @@ class ParameterizedPath:
             return None
         
 
-        
 
 class HttpError(Exception):
     pass
@@ -95,7 +107,9 @@ class Request:
     route = ""
     _started_sending=False
     read = None
+    readline = None
     write = None
+    writer = None
     close = None
     json = None
     version = "1.0"
@@ -152,6 +166,7 @@ async def send_headers(request):
         request._started_sending=True
         await request.write(hdrs)
 
+    
 async def send_json(request, val):
     filename="tmp-{}.json".format(_thread.get_ident())
     with open(filename, 'w') as jsonfile:
@@ -188,7 +203,7 @@ async def send_file(request, filename, content_type=None, segment=4096, binary=F
 
 class Nanoweb:
 
-    extract_headers = ('Authorization', 'Content-Length', 'Content-Type')
+    extract_headers = ('Authorization', 'Content-Length', 'Content-Type','Sec-WebSocket-Version','Sec-WebSocket-Key', 'Host')
     headers = {}
 
     parameterized_routes = []
@@ -208,6 +223,13 @@ class Nanoweb:
         """Route decorator"""
         def decorator(func):
             self.parameterized_routes.append(ParameterizedPath(route,func))
+            return func
+        return decorator
+
+    def socket(self, route):
+        """Socket decorator"""
+        def decorator(func):
+            self.parameterized_routes.append(ParameterizedPath(route,func,is_socket=True))
             return func
         return decorator
 
@@ -264,60 +286,70 @@ class Nanoweb:
 
         request = Request()
         request.read = reader.read
+        request.readline = reader.readline
         request.write = writer.awrite
+        request.writer = writer
+        request.reader = reader
         request.close = writer.aclose
 
         request.method, request.url, version = items
 
         try:
             try:
-                if version not in ("HTTP/1.0", "HTTP/1.1"):
+                if version not in ("HTTP/1.0", "HTTP/1.1","1.0"):
                     raise HttpError(request, 505, "Version Not Supported")
-
-                while True:
-                    items = await reader.readline()
-                    items = items.decode('ascii').split(":", 1)
-
-                    if len(items) == 2:
-                        header, value = items
-                        value = value.strip()
-
-                        if header in self.extract_headers:
-                            request.headers[header] = value
-                    elif len(items) == 1:
-                        break
-                if request.method.upper() == "POST" and "Content-Type" in request.headers and request.headers["Content-Type"] == "application/json":
-                    val = None
-                    jsonval=None
-                    with open(".{}.req".format(_thread.get_ident()),'w') as file:
-                        val=(await reader.read(-1)).decode('UTF-8')
-                        #print("read:{}".format(val))
-                        jsonval=json.loads(val)
-                        request.json=jsonval
-                    reader.close()
-                    #print("Read json:{}".format(json.dumps(jsonval)))
-
-                if self.callback_request:
-                    self.callback_request(request)
+###---- before we go any further, determine the handler.   Note: Socket impossible if we wait
                 params=None
                 index=0
                 handler=None
+                is_socket=False
                 while handler == None and index<len(self.parameterized_routes):
                     route=self.parameterized_routes[index]
                     index=index+1
                     #print("checking route:{}".format(json.dumps(route)))
                     params=route.map_parameters(request.url)
                     if params != None:
+                        is_socket=route.is_socket
                         handler=route.func
                         #print("got handler:{}".format(handler))
                         break
-
-                if handler != None:
-                    #print("handler:{}".format(handler))
-                    await self.generate_output(request,
-                                               handler,params)
+                if handler != None and is_socket:
+                    yield await connect_ws(request.reader,request.writer, handler, request.method, request.url, version)
+                    #do websocket-ee stuff
+                    
                 else:
-                    raise HttpError(request, 404, "File Not Found")
+
+                    while True:
+                        items = await reader.readline()
+                        items = items.decode('ascii').split(":", 1)
+
+                        if len(items) == 2:
+                            header, value = items
+                            value = value.strip()
+
+                            if header in self.extract_headers:
+                                request.headers[header] = value
+                        elif len(items)==1:
+                            break
+                    if request.method.upper() == "POST" and "Content-Type" in request.headers and request.headers["Content-Type"] == "application/json":
+                        val = None
+                        jsonval=None
+                        with open(".{}.req".format(_thread.get_ident()),'w') as file:
+                            val=(await reader.read(-1)).decode('UTF-8')
+                            #print("read:{}".format(val))
+                            jsonval=json.loads(val)
+                            request.json=jsonval
+                        reader.close()
+
+                    if self.callback_request:
+                        self.callback_request(request)
+
+                    if handler != None:
+                        #print("handler:{}".format(handler))
+                        await self.generate_output(request,
+                                                   handler,params)
+                    else:
+                        raise HttpError(request, 404, "File Not Found")
             except HttpError as e:
                 print("caught error:{}".format(e))
                 request, code, message = e.args
