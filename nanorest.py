@@ -201,7 +201,7 @@ async def send_file(request, filename, content_type=None, segment=4096, binary=F
         raise HttpError(request, 404, "File Not Found")
 
 
-class Nanoweb:
+class Nanorest:
 
     extract_headers = ('Authorization', 'Content-Length', 'Content-Type','Sec-WebSocket-Version','Sec-WebSocket-Key', 'Host')
     headers = {}
@@ -363,3 +363,4 @@ class Nanoweb:
 
     async def run(self):
         return await asyncio.start_server(self.handle, self.address, self.port)
+

@@ -4,7 +4,7 @@ Nanorest is an is a full asynchronous web server for micropython created in orde
 
 It is thus able to run on an most Micropython platforms, including the ESP8266.
 
-(*heavily based upon the Nanoweb micro webserver implementation)
+(*heavily based upon the Nanoweb micro webserver implementation by https://github.com/hugokernel)
 ## Features fron nanoweb
 
 * Completely asynchronous
@@ -32,7 +32,7 @@ It is thus able to run on an most Micropython platforms, including the ESP8266.
 ```Python
 
 import uasyncio
-from nanoweb import Nanoweb,send_headers,send_file,send_json,write
+from nanorest import Nanorest,send_headers,send_file,send_json,write
 import machine
 from machine import PWM,Pin
 import time
@@ -49,7 +49,7 @@ def set_servo2(zero_to_hundred):
 ##    _internal_set_servo(zero_to_hundred)
 
 #def _internal_set_servo(zero_to_hundred):
-async def set_servo(zero_to_hundred):
+def set_servo(zero_to_hundred):
     print("setting value to:{}".format(zero_to_hundred))
     if int(zero_to_hundred) <0 or int(zero_to_hundred)>100:
         yield
@@ -64,7 +64,7 @@ async def set_servo(zero_to_hundred):
 #    time.sleep(0.1)
 #    servo1.deinit()
 
-naw = Nanoweb()
+naw = Nanorest()
 @naw.route("/")
 @naw.route("/index.html")
 def get_index(request):
@@ -108,6 +108,7 @@ def gimbal_route(request,x,y):
     await send_json(request,gimbal_data)
 @naw.route("/gimbal")
 def gimbal(request):
+    print("Setting gimbal")
     print("json data:{}".format(request.json))
     if request.json: #only sent on post requests
         if 'x' in request.json:
@@ -116,6 +117,7 @@ def gimbal(request):
         if 'y' in request.json:
             gimbal_data["y"]=request.json['y']   
     await send_json(request,gimbal_data)
+    await request.close();
 # Declare route from a dict
 # Declare route directly with decorator
 @naw.route("/ping")
