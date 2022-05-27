@@ -16,11 +16,9 @@ It is thus able to run on an most Micropython platforms, including the ESP8266.
 
 ## NEW Features
 * Rest mapping to include automatic JSON parsing and sending
-* Parameterized Routes ( i.e. '/api/v1/servo/<pin>/move' or '/api/v2/rigging/
+* Parameterized Routes ( i.e. '/api/v1/servo/<pin>/move' or '/api/v2/rigging/<puppet_number>/<subsystem>' )
 * _WEB SOCKETS_  Special thanks go out to https://github.com/marcidy .   Thanks to a minor fork to his asyncio websocket example, we now have websocket support
-
-<puppet_number>/<subsystem>' )
-* JSON element in requests that send json (i.e.  request.json )
+* JSON element in requests that send ('application/json' post) json (i.e.  request.json )
 
 ## Design considerations
 * async processing sometimes collides with irq functions such as PWM
