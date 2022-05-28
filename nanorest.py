@@ -83,10 +83,11 @@ class ParameterizedPath:
                     param_map[self._parameter_names[index]]=line[:nexSegPos]
                     line=line[nexSegPos+len(segment):]
                 else:
+                    if '/' in line:
+                        return None
                     param_map[self._parameter_names[index]]=line
                     line=""
                 index=index+1
-                    
                 
             if len(line)>0:
                 return None
@@ -172,7 +173,6 @@ async def send_json(request, val):
     with open(filename, 'w') as jsonfile:
         json.dump(val, jsonfile)
     await send_file(request, filename)
-    await request.close()
 
 async def send_file(request, filename, content_type=None, segment=4096, binary=False):
     try:
@@ -363,4 +363,3 @@ class Nanorest:
 
     async def run(self):
         return await asyncio.start_server(self.handle, self.address, self.port)
-
